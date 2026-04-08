@@ -1,0 +1,23 @@
+name: Decision
+description: "Multi-participant pairwise comparison (AHP) — produces auditable consensus ranking."
+
+steps:
+  - name: P.0_decision_session
+    type: P
+    description: "Define the decision: options, context, participants."
+    default_assignee: facilitator
+    artifact: "P.0_decision_session.yaml"
+
+  - name: V.N_vote
+    type: V
+    description: "Each participant submits pairwise comparisons. One artifact per voter."
+    default_assignee: participants
+    artifact: "V.N_vote_<participant>.yaml"
+    notes: "CR < 0.10 consistent, < 0.20 marginal, >= 0.20 excluded from aggregation."
+
+  - name: V.final_consensus
+    type: V
+    description: "Aggregate votes via AIJ weighted geometric mean. Produces ranked consensus."
+    default_assignee: facilitator
+    artifact: "V.final_consensus.yaml"
+    notes: "NedXIS participants carry 1.5x weight. State transitions to COMMITTED."

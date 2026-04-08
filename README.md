@@ -5,7 +5,7 @@
 **The missing governance layer for AI agent teams.**
 
 [![Version](https://img.shields.io/badge/version-2.3.1-blue?style=flat-square)](CHANGELOG.md)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white)](https://python.org)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-156%20passed-brightgreen?style=flat-square)](#running-tests)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-orange?style=flat-square)](#quick-start)
@@ -30,6 +30,14 @@ python3 org_cli.py verify               # check hash-chain integrity
 
 ---
 
+## The Problem
+
+Organizations exist in people's heads — in Slack threads, meeting notes, and shared assumptions that dissolve the moment someone leaves the room. AI agents can't operate on that. They need something explicit, versioned, and machine-readable.
+
+org-as-code encodes roles, responsibilities, and decision-making as Git-native artifacts — not as documentation, but as a system agents can actually run on.
+
+---
+
 ## Why This Exists
 
 AI agents can code, review, deploy, and monitor. But they can't govern themselves — and neither can humans govern them through Slack threads and meeting notes.
@@ -45,11 +53,44 @@ This means you can build teams where AI agents do the heavy lifting (proposals, 
 | **P↔V** | Protocol | Proposals oscillate with Validations — expand options, then contract to decisions |
 | **H(s)** | Priority Score | Calculated, not felt: `w₁·urgency + w₂·commitment + w₃·demand + w₄·blocking` |
 | **E(x)** | Convergence Score | Quadratic energy — one critical gap outweighs three minor ones |
+| **AHP** | Decision Engine | Multi-participant pairwise comparison with weighted aggregation and consistency check |
 | **FDM** | Process Dependencies | Cycle detection, parallel groups, impact scoring, living dependency register |
 | **JSONL** | Audit Trail | SHA-256 hash-chained, append-only, tamper-evident |
 | **MCP** | AI Agent Interface | 21 native tools over stdio transport |
 | **CLI** | Human Interface | 23 commands for operators |
 | **YAML** | Per-Process State | One state file per process — no merge conflicts |
+
+---
+
+## Pairwise Decision Engine
+
+When a decision involves multiple stakeholders with different weights, a single H(s) score isn't enough. `org_decision.py` adds AHP-based (Analytic Hierarchy Process) pairwise comparison as a native `decision` process type — no new dependencies beyond what org-as-code already requires.
+
+Each participant compares options head-to-head. The engine computes individual priority vectors, checks consistency (CR < 0.10 is consistent), and aggregates via weighted geometric mean. Every comparison, every vote, and the final consensus are written as YAML artifacts and hash-chained into the audit trail.
+
+```bash
+# 1. Create a decision session
+python3 org_decision.py session --id DEC-001 \
+  --options "Option A" "Option B" "Option C" \
+  --agent facilitator --title "Q2 infrastructure choice"
+
+# 2. Each participant votes interactively
+python3 org_decision.py vote --id DEC-001 --participant alice
+python3 org_decision.py vote --id DEC-001 --participant bob --role nedxis
+
+# 3. Aggregate into consensus (excludes CR >= 0.20 by default)
+python3 org_decision.py aggregate --id DEC-001 --agent facilitator
+
+# 4. Show result
+python3 org_decision.py show --id DEC-001
+```
+
+Produces in `processes/DEC-001/`:
+- `P.0_decision_session.yaml` — options, context, session metadata
+- `V.N_vote_<participant>.yaml` — individual comparisons, priority vector, CR per voter
+- `V.final_consensus.yaml` — aggregated ranking, verdict, mean CR, participant list
+
+Role weights are configurable: `nedxis` participants carry 1.5× weight by default. All artifacts are hash-chained — the decision is as auditable as any other process in the system.
 
 ---
 
@@ -189,7 +230,8 @@ org-as-code/
 │   └── process_templates/     Reusable flows
 │       ├── feature.yaml
 │       ├── feature_v2.yaml    (with conditional human gate)
-│       └── bugfix.yaml
+│       ├── bugfix.yaml
+│       └── decision.yaml      (pairwise AHP — multi-participant)
 │
 ├── tools/                   ← Maintenance utilities
 │   ├── fix_hash_chain.py      Rebuild hash chain if corrupted
@@ -197,6 +239,7 @@ org-as-code/
 │
 ├── org_mcp_server.py        ← MCP Server (21 tools, stdio transport)
 ├── org_cli.py               ← CLI interface (23 commands)
+├── org_decision.py          ← Pairwise AHP decision engine
 ├── fdm.py                   ← Dependency graph engine (Tarjan, Kahn, stdlib only)
 ├── pyproject.toml           ← Package metadata (pip install org-as-code)
 └── requirements.txt
@@ -237,6 +280,12 @@ python3 org_cli.py deps-analyze                      # Full FDM analysis (parall
 # Git sync
 python3 org_cli.py sync                          # Pull only
 python3 org_cli.py sync "commit message" --agent coder  # Commit + push
+
+# Decision engine (pairwise AHP)
+python3 org_decision.py session --id DEC-001 --options "A" "B" "C" --agent facilitator
+python3 org_decision.py vote --id DEC-001 --participant alice
+python3 org_decision.py aggregate --id DEC-001 --agent facilitator
+python3 org_decision.py show --id DEC-001
 ```
 
 ---
@@ -434,6 +483,10 @@ steps:
 
 `feature_v2.yaml` adds priority-conditional human approval: processes with H(s) ≥ 0.8 require human sign-off at V.1, while low-risk processes (H(s) < 0.5) permit AI-only verification.
 
+### Decision flow (pairwise AHP)
+
+`decision.yaml` runs a multi-participant pairwise comparison session. Each participant submits individual comparisons; the facilitator aggregates into a consensus ranking. Inconsistent votes (CR ≥ 0.20) are flagged and excluded by default. See [Pairwise Decision Engine](#pairwise-decision-engine) above.
+
 ---
 
 ## Theoretical Foundation
@@ -458,6 +511,7 @@ For the design rationale — why quadratic scoring, how the audit trail works, a
 - **Human-AI teams** — Humans set direction (attractors, tensions), AI agents execute (P-steps), either party validates (V-steps). The protocol scales from solo developer + one AI to full teams.
 - **Async-first organizations** — Replace meetings with validated artifacts. Every decision has a traceable audit trail, not a Slack thread.
 - **Compliance-sensitive environments** — Immutable decision logs for AI Act, SOC2, NIS2. The hash chain provides tamper-evident records of who decided what, when, and why.
+- **Multi-stakeholder decisions** — Strategic choices involving participants with different roles and weights. Pairwise AHP produces a mathematically grounded, auditable consensus rather than a show of hands.
 
 ---
 
@@ -541,6 +595,8 @@ We believe in transparency about what this system does and does not do well toda
 
 - **Local tamper-evidence only.** The hash chain provides tamper-evidence but not tamper-resistance. A repository admin with force-push access can rewrite history. For stronger guarantees, consider anchoring chain tips to an external timestamping authority.
 
+- **Decision engine.** `org_decision.py` is a standalone script, not yet integrated into the MCP server toolset. Voting is interactive (terminal) only — no API or async submission path yet.
+
 ---
 
 ## Roadmap
@@ -554,6 +610,7 @@ Planned for a future release:
 - **Policy-based commit control** — process type and risk class determine required approvals, role coverage, and human gates
 - **Conflict resolution** — when validators disagree: consensus, senior override, or mandatory escalation
 - **Separation of duties** — a producer may not self-approve; security processes require senior sign-off
+- **MCP tools for decision engine** — expose `org_decision` session, vote, and aggregate as MCP tools for agent-driven decision workflows
 
 This extends the state machine with a `DECISION_PENDING` state between `V_COMPLETE` and `COMMITTED`, and formalizes the relationship between the existing H(s) human gate and the governance layer.
 
@@ -575,7 +632,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests that demonstrate real usag
 
 **org-as-code** is part of the [SYNTRIAD](https://github.com/SYNTRIAD) ecosystem.
 
-[![GitHub](https://img.shields.io/badge/GitHub-SYNTRIAD%2Forg--as--code-181717?style=flat-square&amp;logo=github)](https://github.com/SYNTRIAD/org-as-code)
-[![Zenodo](https://img.shields.io/badge/Paper-Semantic%20Thermodynamics-blue?style=flat-square&amp;logo=zenodo)](https://zenodo.org/records/17618208)
+[![GitHub](https://img.shields.io/badge/GitHub-SYNTRIAD%2Forg--as--code-181717?style=flat-square&logo=github)](https://github.com/SYNTRIAD/org-as-code)
+[![Zenodo](https://img.shields.io/badge/Paper-Semantic%20Thermodynamics-blue?style=flat-square&logo=zenodo)](https://zenodo.org/records/17618208)
 
 </div>
